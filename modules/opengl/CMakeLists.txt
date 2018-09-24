@@ -125,6 +125,8 @@ set(SHADER_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/glsl/uv_pass_through.vert
     ${CMAKE_CURRENT_SOURCE_DIR}/glsl/cpr_tubular_entry_points.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/glsl/cpr_tubular_exit_points.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/glsl/cpr_planar_entry_points.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/glsl/cpr_planar_exit_points.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/glsl/texturedgeometryrendering.frag
     ${CMAKE_CURRENT_SOURCE_DIR}/glsl/texturedgeometryrendering.vert
     ${CMAKE_CURRENT_SOURCE_DIR}/glsl/utils/classification.glsl
