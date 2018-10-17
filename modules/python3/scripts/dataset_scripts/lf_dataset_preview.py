@@ -1,11 +1,11 @@
 from random import seed, random
 import os
 import sys
+import pickle
 from time import sleep, time
 import math
 from shutil import copyfile
 
-# from lf_camera import LightFieldCamera
 # from random_lf import create_random_lf_cameras
 # from random_clip import random_clip_lf, restore_clip
 # from random_clip import random_plane_clip
@@ -14,6 +14,25 @@ from shutil import copyfile
 import inviwopy
 import ivw.utils as inviwo_utils
 from inviwopy.glm import vec3, ivec2, normalize
+
+import numpy as np
+
+
+def cross_product(vec_1, vec_2):
+    result = vec3(
+        (vec_1.y * vec_2.z) - (vec_1.z * vec_2.y),
+        (vec_1.z * vec_2.x) - (vec_1.x * vec_2.z),
+        (vec_1.x * vec_2.y) - (vec_1.y * vec_2.x))
+    return result
+
+
+def cam_to_string(cam):
+    """Returns some important Inviwo camera properties as a string"""
+    cam_string = ("near;{:8f}\n").format(cam.nearPlane)
+    cam_string += ("far;{:8f}\n").format(cam.farPlane)
+    cam_string += ("focal_length;{:8f}\n".format(cam.projectionMatrix[0][0]))
+    cam_string += ("fov;{}").format(cam.fov)
+    return cam_string
 
 
 class LightFieldCamera:
@@ -40,6 +59,7 @@ class LightFieldCamera:
         self.look_up = look_up
 
     def get_row_col_number(self, index):
+        """Get the row and column for an index"""
         row_num = index // self.spatial_cols
         col_num = index % self.spatial_cols
         return row_num, col_num
@@ -86,81 +106,67 @@ class LightFieldCamera:
         prev_cam_look_up = cam.lookUp
 
         cam.lookUp = self.look_up
+
         if should_time:
-            start_time = time()
-        for idx, val in enumerate(self.calculate_camera_array()):
+            times = []
+
+        for idx, val in enumerate(self._calculate_camera_array()):
             (look_from, look_to) = val
+
+            if should_time:
+                start_time = time()
+
             cam.lookFrom = look_from
             cam.lookTo = look_to
+
             inviwo_utils.update()
-            row_num, col_num = self.get_row_col_number(idx)
+
+            if should_time:
+                time_taken = time() - start_time
+                times.append(time_taken)
 
             if save:
-                # Loop over canvases in the workspace
-                canvases = inviwopy.app.network.canvases
-                same_names = any(
-                    [(canvases[i].displayName == canvases[i + 1].displayName)
-                     for i in range(len(canvases) - 1)]
-                )
-                # The identifier names could be different
-                identifier_same_names = False
-                if same_names:
-                    identifier_same_names = any(
-                        [(canvases[i].identifier == canvases[i + 1].identifier)
-                         for i in range(len(canvases) - 1)]
-                    )
-                for canvas_idx, canvas in enumerate(canvases):
-                    if same_names and identifier_same_names:
-                        file_name = ('Canvas_' + str(canvas_idx) + '_' +
-                                     str(row_num) + str(col_num) + '.png')
-                    elif identifier_same_names:
-                        file_name = (canvas.displayName + str(row_num) +
-                                     str(col_num) + '.png')
-                    else:
-                        file_name = (canvas.identifier + str(row_num) +
-                                     str(col_num) + '.png')
+                # TODO: Canvas is not necessarily the name of the node we want
+                canvas = inviwopy.app.network.Canvas
+                row_num, col_num = self.get_row_col_number(idx)
 
-                    full_save_dir = os.path.abspath(save_dir)
-                    file_path = os.path.join(full_save_dir, file_name)
-                    print('Saving to: ' + file_path)
-                    canvas.snapshot(file_path)
-            else:
-                # Smooths the viewing process
-                if not should_time:
-                    print('Viewing position ({}, {})'.format(row_num, col_num))
-                    sleep(0.1)
+                file_name = str(row_num) + str(col_num) + '.png'
+                file_path = os.path.join(os.path.abspath(save_dir), file_name)
 
-        canvas = inviwopy.app.network.canvases[0]
-        pixel_dim = canvas.inputSize.dimensions.value[0]
-        if save:
-            metadata_filename = os.path.join(full_save_dir, 'metadata.csv')
-            with open(metadata_filename, 'w') as f:
-                self.print_metadata(cam, pixel_dim, f)
+                canvas.snapshot(file_path)
+                print("Saving : {}".format(file_path))
+
+        # canvas = inviwopy.app.network.canvases[0]
+        # pixel_dim = canvas.inputSize.dimensions.value[0]
+        # if save:
+            # metadata_filename = os.path.join(full_save_dir, 'metadata.csv')
+            # with open(metadata_filename, 'w') as f:
+                # self.print_metadata(cam, pixel_dim, f)
 
         # Reset the camera to original position
-        time_taken = 0
         if should_time:
-            time_taken = time() - start_time
-            print("Overall time taken to render grid was {:4f}".format(
-                time_taken))
+            print("Timings : {}".format(times))
+            pickle_loc = os.path.join(os.path.abspath(save_dir), 'timing.pkl')
+            with open(pickle_loc, 'wb') as time_pkl_file:
+                pickle.dump(times, time_pkl_file)
+
         print()
         cam.lookFrom = prev_cam_look_from
         cam.lookTo = prev_cam_look_to
         cam.lookUp = prev_cam_look_up
-        return time_taken
 
-    def get_look_right(self):
+    def _get_look_right(self):
         """Get the right look vector for the top left camera"""
         view_direction = self.look_to - self.look_from
         right_vec = normalize(cross_product(view_direction, self.look_up))
         return right_vec
 
-    def calculate_camera_array(self):
+    def _calculate_camera_array(self):
         """Returns list of (look_from, look_to) tuples for the camera array"""
         look_list = []
 
         row_step_vec = normalize(self.look_up) * self.interspatial_distance
-        col_step_vec = self.get_look_right() * self.interspatial_distance
+        col_step_vec = self._get_look_right() * self.interspatial_distance
 
         # Start at the top left camera position
         for i in range(self.spatial_rows):
@@ -178,24 +184,54 @@ class LightFieldCamera:
         return look_list
 
 
-def cross_product(vec_1, vec_2):
-    result = vec3(
-        (vec_1.y * vec_2.z) - (vec_1.z * vec_2.y),
-        (vec_1.z * vec_2.x) - (vec_1.x * vec_2.z),
-        (vec_1.x * vec_2.y) - (vec_1.y * vec_2.x))
-    return result
+def get_random_look_to(scale=10.0):
+    look_to_point = np.random.normal(loc=0.0, scale=scale, size=3)
+    return  vec3(look_to_point[0], look_to_point[1], look_to_point[2])
 
 
-def cam_to_string(cam):
-    """Returns some important Inviwo camera properties as a string"""
-    cam_string = ("near;{:8f}\n").format(cam.nearPlane)
-    cam_string += ("far;{:8f}\n").format(cam.farPlane)
-    cam_string += ("focal_length;{:8f}\n".format(cam.projectionMatrix[0][0]))
-    cam_string += ("fov;{}").format(cam.fov)
-    return cam_string
+def get_random_look_from(inner_radius=50.0, outer_radius=100.0):
+    radius = inner_radius + (random() * (outer_radius - inner_radius))
+    theta = math.pi * random()
+    phi = 2 * math.pi * random()
+
+    x = radius * math.sin(theta) * math.cos(phi)
+    y = radius * math.sin(theta) * math.sin(phi)
+    z = radius * math.cos(theta)
+
+    return vec3(x, y, z)
 
 
-def main(pixel_dim, clip, num_random, plane):
+def get_random_look_up(scale=0.25):
+    fuzz = np.random.normal(loc=0.0, scale=scale, size=3)
+
+    return vec3(fuzz[0], -1 + fuzz[1], fuzz[2])
+
+
+def create_random_lf_cameras(num_to_create,
+                             interspatial_distance=1.0,
+                             spatial_rows=8,
+                             spatial_cols=8,
+                             inner_radius=50.0,
+                             outer_radius=100.0,
+                             look_to_scale=10.0,
+                             look_up_scale=0.25):
+    lf_cameras = []
+    for _ in range(num_to_create):
+        look_to = get_random_look_to(look_to_scale)
+        look_from = get_random_look_from(inner_radius, outer_radius)
+        look_up = get_random_look_up(look_up_scale)
+        lf_cam = LightFieldCamera(look_from, look_to, look_up,
+                                  interspatial_distance,
+                                  spatial_rows, spatial_cols)
+        lf_cameras.append(lf_cam)
+
+    return lf_cameras
+
+
+def main(pixel_dim, num_random_lf_samples, save_dir, use_clip, use_plane,
+         interspatial_distance=0.5, spatial_rows=8, spatial_cols=8,
+         look_from_inner_radius=50.0, look_from_outer_radius=100.0,
+         look_to_scale=10.0, look_up_scale=0.25):
     # Setup
     app = inviwopy.app
     network = app.network
@@ -208,34 +244,53 @@ def main(pixel_dim, clip, num_random, plane):
     inviwo_utils.update()
 
     random_lfs = create_random_lf_cameras(
-        num_random,
-        (180, 35),
-        1,
-        interspatial_distance=0.5,
-        look_up=vec3(0, 1, 0)
+        num_random_lf_samples,
+        interspatial_distance,
+        spatial_rows,
+        spatial_cols,
+        look_from_inner_radius,
+        look_from_outer_radius,
+        look_to_scale
     )
 
-    time_accumulator = (0.0, 0.0, 0.0)
-    for lf in random_lfs:
-        if clip:
-            _, clip_type = random_clip_lf(network, lf)
-        elif plane:
-            random_plane_clip(network, lf)
-        time_taken = lf.view_array(cam, save=False, should_time=True)
-        time_accumulator = welford.update(
-            time_accumulator, time_taken)
-        if clip:
-            restore_clip(network, clip_type)
-    mean, variance, _ = welford.finalize(time_accumulator)
-    print("Time taken per grid, average {:4f}, std_dev {:4f}".format(
-        mean, math.sqrt(variance)))
+    # time_accumulator = (0.0, 0.0, 0.0)
+
+    for idx, lf_cam in enumerate(random_lfs):
+        sub_dir_name = str(idx).zfill(4)
+        sample_dir = os.path.join(save_dir, sub_dir_name)
+        os.mkdir(sample_dir)
+        # if use_clip:
+            # _, clip_type = random_clip_lf(network, lf)
+        # elif use_plane:
+            # random_plane_clip(network, lf)
+
+        lf_cam.view_array(cam, save=True, save_dir=sample_dir, should_time=True)
+        # time_taken = lf.view_array(cam, save=False, should_time=True)
+        # time_accumulator = welford.update(
+            # time_accumulator, time_taken)
+        # if clip:
+            # restore_clip(network, clip_type)
+    # mean, variance, _ = welford.finalize(time_accumulator)
+    # print("Time taken per grid, average {:4f}, std_dev {:4f}".format(
+        # mean, math.sqrt(variance)))
 
 
 if __name__ == '__main__':
     seed(time())
-    PIXEL_DIM = 512
-    CLIP = False
-    PLANE = False
-    NUM_RANDOM_LF_SAMPLES = 2
+    pixel_dim = 512
+    num_random_lf_samples = 10
+    save_dir = '/media/bulk/lfsubclavia'
+    use_clip = False
+    use_plane = False
+    interspatial_distance = 0.5
+    spatial_rows = 8
+    spatial_cols = 8
+    look_from_inner_radius = 50.0
+    look_from_outer_radius = 250.0
+    look_to_scale = 10.0
+    look_up_scale = 0.25
 
-    main(PIXEL_DIM, CLIP, NUM_RANDOM_LF_SAMPLES, PLANE)
+    main(pixel_dim, num_random_lf_samples, save_dir, use_clip, use_plane,
+         interspatial_distance, spatial_rows, spatial_cols,
+         look_from_inner_radius, look_from_outer_radius,
+         look_to_scale, look_up_scale)
