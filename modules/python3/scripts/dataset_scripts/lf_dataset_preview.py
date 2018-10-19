@@ -186,7 +186,7 @@ class LightFieldCamera:
 
 def get_random_look_to(scale=10.0):
     look_to_point = np.random.normal(loc=0.0, scale=scale, size=3)
-    return  vec3(look_to_point[0], look_to_point[1], look_to_point[2])
+    return vec3(look_to_point[0], look_to_point[1], look_to_point[2])
 
 
 def get_random_look_from(inner_radius=50.0, outer_radius=100.0):
@@ -276,13 +276,14 @@ def main(pixel_dim, num_random_lf_samples, save_dir, use_clip, use_plane,
 
 
 if __name__ == '__main__':
-    seed(time())
-    pixel_dim = 512
-    num_random_lf_samples = 10
-    save_dir = '/media/bulk/lfsubclavia'
+    seed(42)
+    np.random.seed(42)
+    pixel_dim = 256
+    num_random_lf_samples = 2000
+    save_dir = '/media/tapa/lfsubclavia'
     use_clip = False
     use_plane = False
-    interspatial_distance = 0.5
+    interspatial_distance = 1.0
     spatial_rows = 8
     spatial_cols = 8
     look_from_inner_radius = 50.0
